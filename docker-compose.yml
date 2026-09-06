@@ -1,6 +1,6 @@
 services:
   x-ui-exporter:
-    image: hteppl/x-ui-exporter
+    image: hteppl/x-ui-exporter:latest
     container_name: x-ui-exporter
     restart: unless-stopped
     env_file:
