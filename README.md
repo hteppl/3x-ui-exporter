@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hteppl/3x-ui-exporter/main/.github/images/logo.png" alt="logo">
+  <img src="https://raw.githubusercontent.com/hteppl/3x-ui-exporter/main/.github/images/logo.webp" alt="logo">
 </p>
 
 # 3X-UI Metrics Exporter
