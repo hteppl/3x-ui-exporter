@@ -1,5 +1,6 @@
 # IDE settings
 .idea
+.vscode
 
 # Build output
 dist/
@@ -10,3 +11,6 @@ x-ui-exporter
 
 # Local config
 config.yaml
+
+# Local env
+.env

@@ -37,6 +37,9 @@ archives:
       - README.md
 
 release:
+  github:
+    owner: hteppl
+    name: 3x-ui-exporter
   name_template: "v{{ .Version }}"
 
 changelog:

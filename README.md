@@ -4,22 +4,21 @@
 
 # 3X-UI Metrics Exporter
 
-[![Release](https://img.shields.io/github/v/release/hteppl/3x-ui-exporter.svg)](https://github.com/hteppl/3x-ui-exporter/releases)
-[![DockerHub](https://img.shields.io/badge/DockerHub-x--ui--exporter-blue)](https://hub.docker.com/r/hteppl/x-ui-exporter/)
-[![Build](https://img.shields.io/github/actions/workflow/status/hteppl/3x-ui-exporter/release.yaml.svg)](https://github.com/hteppl/3x-ui-exporter/actions)
-[![GO Version](https://img.shields.io/github/go-mod/go-version/hteppl/3x-ui-exporter.svg)]()
-[![Downloads](https://img.shields.io/github/downloads/hteppl/3x-ui-exporter/total.svg)](https://github.com/hteppl/3x-ui-exporter/releases/latest)
-[![License](https://img.shields.io/badge/license-GNU%20AGPLv3-blue.svg?longCache=true)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hteppl/3x-ui-exporter)](https://goreportcard.com/report/github.com/hteppl/3x-ui-exporter)
+[![Release](https://img.shields.io/github/v/release/hteppl/3x-ui-exporter?style=flat-square&logo=github&label=release&color=blue)](https://github.com/hteppl/3x-ui-exporter/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/hteppl/3x-ui-exporter/release.yaml?style=flat-square&logo=githubactions&logoColor=white&label=build)](https://github.com/hteppl/3x-ui-exporter/actions/workflows/release.yaml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/hteppl/3x-ui-exporter?style=flat-square&logo=go&logoColor=white&label=go)](go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hteppl/3x-ui-exporter?style=flat-square)](https://goreportcard.com/report/github.com/hteppl/3x-ui-exporter)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square&logo=gnu&logoColor=white)](LICENSE)
+[![GitHub Downloads](https://img.shields.io/github/downloads/hteppl/3x-ui-exporter/total?style=flat-square&logo=github&label=github%20downloads&color=brightgreen)](https://github.com/hteppl/3x-ui-exporter/releases)
+[![Docker Pulls](https://img.shields.io/docker/pulls/hteppl/x-ui-exporter?style=flat-square&logo=docker&logoColor=white&label=docker%20pulls&color=066da5)](https://hub.docker.com/r/hteppl/x-ui-exporter)
 
-3X-UI Metrics Exporter is a comprehensive tool designed to collect and export metrics from
-the [3X-UI Web Panel](https://github.com/MHSanaei/3x-ui). This exporter provides detailed monitoring capabilities for
+3X-UI Metrics Exporter is a comprehensive tool designed to collect and export metrics from the
+[3X-UI Web Panel](https://github.com/MHSanaei/3x-ui). This exporter provides detailed monitoring capabilities for
 various aspects of your 3X-UI, including node status, traffic flow, system performance, and user activity, making all
-data readily
-available for integration with the Prometheus monitoring system.
+data readily available for integration with the Prometheus monitoring system.
 
-> **Compatibility:** This exporter targets the **3X-UI v3.0+** API (CSRF-authenticated login). Panels older than
-> v3.0 are not supported.
+> **Compatibility:** This exporter targets the **3X-UI v3.0+** API (CSRF-authenticated login). Panels older than v3.0
+> are not supported.
 
 ## Features
 
@@ -27,20 +26,17 @@ available for integration with the Prometheus monitoring system.
 - **Traffic Metrics**: Monitors total uploaded and downloaded bytes per client or inbound.
 - **3X-UI Monitoring**: Provides detailed XRay version information and additional operational metrics from 3X-UI.
 - **Version and Start Time Information**: Delivers core version information and confirms whether the core service has
-  started
-  successfully.
+  started successfully.
 - **Flexible Configuration Options**: Supports customization through environment variables, command-line arguments, and
-  YAML configuration files,
-  providing maximum flexibility for different deployment scenarios.
-- **Multi-Architecture Support**: Features Docker images for multiple architectures, including AMD64 and ARM64,
-  ensuring compatibility across diverse deployment environments.
-- **Enhanced Security**: Offers optional BasicAuth protection for the metrics endpoint, providing an
-  additional layer of security for sensitive monitoring data.
+  YAML configuration files, providing maximum flexibility for different deployment scenarios.
+- **Multi-Architecture Support**: Features Docker images for multiple architectures, including AMD64 and ARM64, ensuring
+  compatibility across diverse deployment environments.
+- **Enhanced Security**: Offers optional BasicAuth protection for the metrics endpoint, providing an additional layer of
+  security for sensitive monitoring data.
 - **Seamless Prometheus Integration**: Designed to work flawlessly with Prometheus, enabling straightforward setup and
   configuration for comprehensive 3X-UI panel monitoring.
 - **Comprehensive VPN Monitoring**: Simplifies the monitoring and management of VPN services by providing a rich set of
-  metrics,
-  significantly improving visibility into system performance and user activity.
+  metrics, significantly improving visibility into system performance and user activity.
 
 ## Metrics
 
@@ -51,7 +47,7 @@ Below is a table of the metrics provided by 3X-UI Metrics Exporter.
 Users metrics, such as online:
 
 | Name                      | Description                  |
-|---------------------------|------------------------------|
+| ------------------------- | ---------------------------- |
 | `x_ui_total_online_users` | Total number of online users |
 
 ### Clients
@@ -59,7 +55,7 @@ Users metrics, such as online:
 Clients metrics (params: `id`, `email`):
 
 | Name                     | Description                       |
-|--------------------------|-----------------------------------|
+| ------------------------ | --------------------------------- |
 | `x_ui_client_up_bytes`   | Total uploaded bytes per client   |
 | `x_ui_client_down_bytes` | Total downloaded bytes per client |
 
@@ -68,7 +64,7 @@ Clients metrics (params: `id`, `email`):
 Inbounds metrics (params: `id`, `remark`):
 
 | Name                      | Description                        |
-|---------------------------|------------------------------------|
+| ------------------------- | ---------------------------------- |
 | `x_ui_inbound_up_bytes`   | Total uploaded bytes per inbound   |
 | `x_ui_inbound_down_bytes` | Total downloaded bytes per inbound |
 
@@ -77,7 +73,7 @@ Inbounds metrics (params: `id`, `remark`):
 System metrics (`version` param for `x_ui_xray_version`):
 
 | Name                 | Description                |
-|----------------------|----------------------------|
+| -------------------- | -------------------------- |
 | `x_ui_xray_version`  | XRay version used by 3X-UI |
 | `x_ui_panel_threads` | 3X-UI panel threads        |
 | `x_ui_panel_memory`  | 3X-UI panel memory usage   |
@@ -91,11 +87,11 @@ file. These are alternative methods of configuration, and you should choose one 
 Below is a table of configuration options:
 
 | Variable Name          | Command-Line Argument    | Required | Default Value              | Description                                                               |
-|------------------------|--------------------------|----------|----------------------------|---------------------------------------------------------------------------|
+| ---------------------- | ------------------------ | -------- | -------------------------- | ------------------------------------------------------------------------- |
 | `CONFIG_FILE`          | `--config-file`          | No       | N/A                        | Path to YAML configuration file. When provided, CLI flags are ignored     |
 | `PANEL_BASE_URL`       | `--panel-base-url`       | Yes      | `https://<your-panel-url>` | URL of the 3X-UI management panel                                         |
 | `PANEL_USERNAME`       | `--panel-username`       | Yes      | `<your-panel-username>`    | Username for the 3X-UI panel                                              |
-| `PANEL_PASSWORD`       | `--panel-password`       | Yes      | `<your-panel-password>`    | Password for the 3X-UI panel                                              | 
+| `PANEL_PASSWORD`       | `--panel-password`       | Yes      | `<your-panel-password>`    | Password for the 3X-UI panel                                              |
 | `INSECURE_SKIP_VERIFY` | `--insecure-skip-verify` | No       | `false`                    | Skip SSL certificate verification (INSECURE)                              |
 | `METRICS_IP`           | `--metrics-ip`           | No       | `0.0.0.0`                  | IP address for the metrics server                                         |
 | `METRICS_PORT`         | `--metrics-port`         | No       | `9090`                     | Port for the metrics server                                               |
@@ -137,8 +133,8 @@ metrics-username: "metricsUser"
 metrics-password: "MetricsVeryHardPassword"
 ```
 
-> **Note:** When using a configuration file with the `--config-file` flag, all settings
-> are taken from the configuration file, and any other command-line arguments are ignored.
+> **Note:** When using a configuration file with the `--config-file` flag, all settings are taken from the configuration
+> file, and any other command-line arguments are ignored.
 
 ## Installation
 
@@ -171,8 +167,8 @@ sudo systemctl stop x-ui-exporter      # Stop service
 
 ### Manual CLI Installation
 
-If you prefer manual installation, download the latest binary from
-the [releases page](https://github.com/hteppl/3x-ui-exporter/releases) for your architecture.
+If you prefer manual installation, download the latest binary from the
+[releases page](https://github.com/hteppl/3x-ui-exporter/releases) for your architecture.
 
 #### Running with command-line arguments:
 
@@ -191,8 +187,8 @@ the [releases page](https://github.com/hteppl/3x-ui-exporter/releases) for your 
 ./x-ui-exporter --config-file=config.yaml
 ```
 
-> **Important:** The configuration file approach and command-line arguments cannot be combined.
-> When using a configuration file, any command-line arguments are ignored.
+> **Important:** The configuration file approach and command-line arguments cannot be combined. When using a
+> configuration file, any command-line arguments are ignored.
 
 ### Docker Installation
 
@@ -213,30 +209,17 @@ docker run -d \
 
 #### Using Docker Compose:
 
-Create a `docker-compose.yml` file:
+A ready-to-use [`docker-compose.yml`](docker-compose.yml) is provided with the project. It reads its configuration from
+a `.env` file, so copy the provided sample and fill in your panel details:
 
-```yaml
-version: "3"
-services:
-  x-ui-exporter:
-    image: hteppl/x-ui-exporter
-    container_name: x-ui-exporter
-    restart: unless-stopped
-    environment:
-      - PANEL_BASE_URL=https://your-panel-url
-      - PANEL_USERNAME=your-panel-username
-      - PANEL_PASSWORD=your-panel-password
-      # Optional settings
-      # - METRICS_PORT=9090
-      # - UPDATE_INTERVAL=30
-    ports:
-      - "9090:9090"
+```bash
+cp .env.sample .env
 ```
 
 Then run:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 > **Security Recommendation:** For production deployments, it's strongly advised to enable metrics authentication by
@@ -272,11 +255,11 @@ To collect metrics with Prometheus, add the exporter to your prometheus.yml conf
 scrape_configs:
   - job_name: "x-ui_exporter"
     static_configs:
-      - targets: [ "<exporter-ip>:9090" ]
+      - targets: ["<exporter-ip>:9090"]
 ```
 
-Ensure to replace `<your-panel-url>`, `<your-panel-username>`, `<your-panel-password>`, and `<exporter-ip>`
-with your actual information.
+Ensure to replace `<your-panel-url>`, `<your-panel-username>`, `<your-panel-password>`, and `<exporter-ip>` with your
+actual information.
 
 ## Contribute
 
@@ -289,6 +272,19 @@ improvements, your input helps make this project better. Here's a quick guide to
 4. **Commit & PR**: Commit your changes with clear messages, then open a pull request detailing your work.
 5. **Feedback**: Be prepared to engage with feedback and further refine your contribution.
 
-Happy contributing! If you're new to this, GitHub's guide
-on [Creating a pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request)
+Happy contributing! If you're new to this, GitHub's guide on
+[Creating a pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request)
 is an excellent resource.
+
+## Credits
+
+Maintained by [@hteppl](https://github.com/hteppl), with contributions from:
+
+- [@fffedor](https://github.com/fffedor)
+- [@ksusonic](https://github.com/ksusonic)
+- [@welcomereality](https://github.com/welcomereality)
+
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0**. See the [LICENSE](LICENSE) file for the
+full text.
