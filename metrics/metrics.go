@@ -56,8 +56,7 @@ var (
 			Help: "Resident memory of the 3X-UI panel process in bytes (appStats.mem)",
 		},
 	)
-	// PanelVersion is an info-style metric: the value is always 1 and the
-	// panel version is carried in the label.
+	// Info-style: value is always 1, the version lives in the label.
 	PanelVersion = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "x_ui_panel_version",
@@ -65,16 +64,14 @@ var (
 		},
 		[]string{"version"},
 	)
-	// XrayUp is the numeric health signal to alert on. The panel reports
-	// "running", "stop" or "error"; only "running" counts as up.
+	// The signal to alert on; only the panel's "running" state counts as up.
 	XrayUp = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "x_ui_xray_up",
 			Help: "1 when the Xray process is running, 0 when stopped or errored",
 		},
 	)
-	// XrayState carries the descriptive state alongside XrayUp, keeping the
-	// free-form error message out of the metric you alert on.
+	// Separate from XrayUp so free-form error text never lands on the alert metric.
 	XrayState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "x_ui_xray_state",

@@ -28,10 +28,7 @@ type APIClient struct {
 	httpClient *http.Client
 }
 
-// v3 API response envelopes. Only the fields the exporter reads are declared;
-// unknown keys (settings, streamSettings, sniffing — nested JSON objects in v3)
-// are ignored. This is exactly why the old string-typed inbound schema could
-// not decode a v3 /inbounds/list response.
+// v3 API envelopes; only the fields the exporter reads are declared.
 type onlinesResponse struct {
 	Success bool     `json:"success"`
 	Msg     string   `json:"msg"`
@@ -112,8 +109,7 @@ var authCache struct {
 	sync.Mutex
 }
 
-// registerAuthFailure records a rejected credential and schedules the next
-// permitted attempt. Callers must hold authCache's lock.
+// registerAuthFailure schedules the next permitted attempt. Caller holds the lock.
 func registerAuthFailure() time.Duration {
 	authCache.Failures++
 
@@ -129,18 +125,14 @@ func registerAuthFailure() time.Duration {
 	return delay
 }
 
-// resetAuthFailures clears the backoff after a successful login.
-// Callers must hold authCache's lock.
+// resetAuthFailures clears the backoff. Caller holds the lock.
 func resetAuthFailures() {
 	authCache.Failures = 0
 	authCache.NextRetryAt = time.Time{}
 }
 
-// fetchCSRFToken retrieves the session CSRF token required by 3X-UI v3.0+.
-// The token is bound to the session cookie the panel sets on this response, so
-// both are returned and must be carried into the subsequent /login request.
-// Older panels lack this endpoint; on any failure it returns ("", nil), which
-// GetAuthToken now treats as a hard authentication failure (3X-UI v3.0+ is required).
+// fetchCSRFToken returns the v3.0+ CSRF token and the session cookie it is bound
+// to; both must ride along on /login. Returns ("", nil) on any failure.
 func (a *APIClient) fetchCSRFToken() (string, *http.Cookie) {
 	req, err := http.NewRequest(http.MethodGet, a.config.BaseURL+"/csrf-token", nil)
 	if err != nil {
@@ -192,8 +184,7 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 		return &authCache.Cookie, nil
 	}
 
-	// Hold off while a previous rejection is still backing off, so a bad
-	// credential cannot trip the panel's login limiter.
+	// A bad credential must not trip the panel's login limiter.
 	if wait := time.Until(authCache.NextRetryAt); wait > 0 {
 		return nil, fmt.Errorf(
 			"authentication backoff after %d failed attempt(s); retrying in %s",
@@ -201,8 +192,7 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 		)
 	}
 
-	// 3X-UI v3.0+ requires a CSRF token bound to the session cookie that
-	// /csrf-token sets. Without it the panel returns HTTP 403 on /login.
+	// Without the CSRF token the panel returns HTTP 403 on /login.
 	csrfToken, csrfCookie := a.fetchCSRFToken()
 	if csrfToken == "" {
 		return nil, fmt.Errorf("could not obtain CSRF token; 3X-UI v3.0+ required")
@@ -221,8 +211,7 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("X-CSRF-Token", csrfToken)
 	if csrfCookie != nil {
-		// The token is validated against the session /csrf-token created, so
-		// that session cookie must ride along with the login request.
+		// The token is validated against the session that minted it.
 		req.AddCookie(csrfCookie)
 	}
 
@@ -301,7 +290,7 @@ func (a *APIClient) FetchOnlineUsersCount(cookie *http.Cookie) error {
 }
 
 func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
-	// Clear old label-bearing metrics to avoid accumulating obsolete values
+	// Drop obsolete label values.
 	metrics.XrayVersion.Reset()
 	metrics.PanelVersion.Reset()
 	metrics.XrayState.Reset()
@@ -320,8 +309,7 @@ func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
 		return fmt.Errorf("server status: %s", response.Msg)
 	}
 
-	// XRay metrics — parsing preserved byte-for-byte from the pre-v3 code so the
-	// gauge value for a given version string does not change.
+	// Parsing preserved from pre-v3 so the gauge value per version is unchanged.
 	xrayVersion := strings.ReplaceAll(response.Obj.Xray.Version, ".", "")
 	num, _ := strconv.ParseFloat(xrayVersion, 64)
 	metrics.XrayVersion.WithLabelValues(response.Obj.Xray.Version).Set(num)
@@ -330,8 +318,7 @@ func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
 		metrics.PanelVersion.WithLabelValues(response.Obj.PanelVersion).Set(1)
 	}
 
-	// The panel reports "running", "stop" or "error"; treat anything but
-	// "running" as down so the signal is safe to alert on.
+	// Panel reports "running", "stop" or "error"; only "running" is up.
 	metrics.XrayState.WithLabelValues(response.Obj.Xray.State, response.Obj.Xray.ErrorMsg).Set(1)
 	if response.Obj.Xray.State == "running" {
 		metrics.XrayUp.Set(1)
@@ -345,7 +332,6 @@ func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
 		metrics.AmneziaWGUp.Set(0)
 	}
 
-	// Panel metrics
 	metrics.PanelGoroutines.Set(float64(response.Obj.AppStats.Threads))
 	metrics.PanelMemoryBytes.Set(float64(response.Obj.AppStats.Mem))
 	metrics.XrayUptimeSeconds.Set(float64(response.Obj.AppStats.Uptime))
@@ -354,9 +340,7 @@ func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
 }
 
 func (a *APIClient) FetchInboundsList(cookie *http.Cookie) error {
-	// Clear old metric values to avoid exposing stale data from previous
-	// updates. Resetting ensures obsolete label combinations are removed
-	// before setting new values.
+	// Drop obsolete label combinations before setting new values.
 	metrics.InboundUp.Reset()
 	metrics.InboundDown.Reset()
 	metrics.ClientUp.Reset()
@@ -389,7 +373,6 @@ func (a *APIClient) FetchInboundsList(cookie *http.Cookie) error {
 				metrics.ClientDown.WithLabelValues(cid, client.Email).Set(float64(client.Down))
 			}
 		} else {
-			// Top N by Upload
 			sortedUp := make([]clientStat, len(inb.ClientStats))
 			copy(sortedUp, inb.ClientStats)
 			sort.Slice(sortedUp, func(i, j int) bool {
@@ -402,7 +385,6 @@ func (a *APIClient) FetchInboundsList(cookie *http.Cookie) error {
 				).Set(float64(client.Up))
 			}
 
-			// Top N by Download
 			sortedDown := make([]clientStat, len(inb.ClientStats))
 			copy(sortedDown, inb.ClientStats)
 			sort.Slice(sortedDown, func(i, j int) bool {
@@ -431,9 +413,7 @@ func (a *APIClient) createRequest(method, path string, cookie *http.Cookie) (*ht
 	req.Header.Set("Accept", "application/json")
 	req.AddCookie(cookie)
 
-	// 3X-UI v3.0+ validates the CSRF token on API requests. Some panels reject
-	// even safe methods without it, so it is attached to every request. Empty
-	// only before the first successful login, where it is a harmless no-op.
+	// Some panels reject even safe methods without the token; empty is a no-op.
 	authCache.Lock()
 	token := authCache.CSRFToken
 	authCache.Unlock()

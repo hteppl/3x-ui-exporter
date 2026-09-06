@@ -21,14 +21,11 @@ var (
 
 func init() { //
 	prometheus.MustRegister(
-		// User-related metrics
 		metrics.OnlineUsersCount,
-		// Client-related metrics
 		metrics.InboundUp,
 		metrics.InboundDown,
 		metrics.ClientUp,
 		metrics.ClientDown,
-		// System-related metrics
 		metrics.XrayVersion,
 		metrics.PanelVersion,
 		metrics.XrayUp,

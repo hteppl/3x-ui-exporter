@@ -39,8 +39,7 @@ func (v VersionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
 }
 
 func Parse(version, commit string) (*CLI, error) {
-	// Populate the environment from the env file before parsing, so that
-	// kong can resolve the env tags below from it.
+	// Must run before parsing so kong can resolve the env tags.
 	if err := loadEnvFile(); err != nil {
 		return nil, fmt.Errorf("load env file: %w", err)
 	}
@@ -55,7 +54,6 @@ func Parse(version, commit string) (*CLI, error) {
 		},
 	)
 
-	// Validate the final configuration
 	validatedConfig, err := validate(&config)
 	if err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)

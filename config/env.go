@@ -6,19 +6,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// DefaultEnvFile is the env file loaded from the working directory when
-// ENV_FILE is not set.
+// DefaultEnvFile is used when ENV_FILE is not set.
 const DefaultEnvFile = ".env"
 
-// loadEnvFile loads key/value pairs from an env file into the process
-// environment so that they are visible to the flag parser.
-//
-// The path is taken from ENV_FILE, falling back to .env in the working
-// directory. Values already present in the environment win, which keeps
-// container and systemd variables authoritative over the file.
-//
-// A missing file is not an error: the exporter is fully configurable through
-// environment variables and command-line flags alone.
+// loadEnvFile loads ENV_FILE (default .env) into the environment. Existing
+// variables win, so Docker and systemd stay authoritative. A missing default
+// file is not an error; a missing explicit ENV_FILE is.
 func loadEnvFile() error {
 	path := os.Getenv("ENV_FILE")
 	explicit := path != ""

@@ -52,8 +52,7 @@ func TestFetchOnlineUsersCountFailure(t *testing.T) {
 }
 
 func TestFetchInboundsList(t *testing.T) {
-	// settings/streamSettings/sniffing are nested OBJECTS here (the v3 shape);
-	// the decode must not choke on them the way an old string-typed Settings field would.
+	// v3 shape: settings/streamSettings/sniffing are nested objects, not strings.
 	const body = `{"success":true,"obj":[
 		{"id":1,"up":100,"down":200,"remark":"VLESS-443",
 		 "settings":{"clients":[{"email":"alice"}],"decryption":"none"},
@@ -114,8 +113,7 @@ func TestFetchServerStatus(t *testing.T) {
 	if got := testutil.ToFloat64(metrics.XrayUptimeSeconds); got != 86400 {
 		t.Errorf("XrayUptimeSeconds = %v, want 86400", got)
 	}
-	// v-prefixed version is not numeric: the label carries the version, the
-	// value is best-effort 0. This preserves the pre-v3 behavior exactly.
+	// A v-prefixed version is not numeric: label carries it, value is 0.
 	if got := testutil.ToFloat64(metrics.XrayVersion.WithLabelValues("v25.10.31")); got != 0 {
 		t.Errorf("XrayVersion value = %v, want 0", got)
 	}

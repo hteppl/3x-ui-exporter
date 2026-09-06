@@ -20,8 +20,7 @@ func TestAuthRetryBackoffStaysUnderPanelLoginLimit(t *testing.T) {
 		}
 	}
 
-	// The panel blocks after 5 failures inside a 5-minute window. Replay the
-	// schedule and assert we never reach that in any window.
+	// The panel blocks after 5 failures in a 5-minute window; never reach that.
 	resetAuthFailures()
 	var at []time.Duration
 	var now time.Duration
