@@ -23,7 +23,6 @@ type CLI struct {
 	ApiUsername        string      `name:"panel-username" help:"Panel username" env:"PANEL_USERNAME"`
 	ApiPassword        string      `name:"panel-password" help:"Panel password" env:"PANEL_PASSWORD"`
 	InsecureSkipVerify bool        `name:"insecure-skip-verify" help:"Skip SSL certificate verification (INSECURE)" default:"false" env:"INSECURE_SKIP_VERIFY"`
-	ConfigFile         string      `name:"config-file" help:"Path to a YAML configuration file" env:"CONFIG_FILE"`
 	Version            VersionFlag `name:"version" help:"Print version information and quit"`
 }
 
@@ -40,8 +39,12 @@ func (v VersionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
 }
 
 func Parse(version, commit string) (*CLI, error) {
+	// Must run before parsing so kong can resolve the env tags.
+	if err := loadEnvFile(); err != nil {
+		return nil, fmt.Errorf("load env file: %w", err)
+	}
+
 	var config CLI
-	// Parse CLI flags first
 	_ = kong.Parse(&config,
 		kong.Name("x-ui-exporter"),
 		kong.Description("A command-line application for exporting 3X-UI metrics."),
@@ -51,19 +54,6 @@ func Parse(version, commit string) (*CLI, error) {
 		},
 	)
 
-	// Check if a config file is provided
-	if config.ConfigFile != "" {
-		// Load YAML configuration
-		yamlConfig, err := LoadYAMLConfig(config.ConfigFile)
-		if err != nil {
-			return nil, fmt.Errorf("error loading YAML configuration file: %v", err)
-		}
-
-		// Use YAML config instead of CLI flags
-		config = yamlConfig.ToCLI()
-	}
-
-	// Validate the final configuration
 	validatedConfig, err := validate(&config)
 	if err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)

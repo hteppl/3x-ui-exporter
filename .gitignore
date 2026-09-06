@@ -1,5 +1,11 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
 # IDE settings
 .idea
+.vscode
 
 # Build output
 dist/
@@ -8,5 +14,5 @@ dist/
 marzban-exporter
 x-ui-exporter
 
-# Local config
-config.yaml
+# Local env
+.env

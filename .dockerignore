@@ -1,0 +1,29 @@
+# Git metadata (version comes from the GIT_TAG/GIT_COMMIT build args)
+.git
+.gitignore
+.github
+
+# Secrets and local config — never bake these into an image layer
+.env
+.env.*
+
+# Build output
+dist/
+marzban-exporter
+x-ui-exporter
+
+# Deployment and tooling files the build does not need
+Dockerfile
+.dockerignore
+docker-compose.yml
+.goreleaser.yaml
+install.sh
+x-ui-exporter.service
+
+# Docs
+README.md
+LICENSE
+
+# IDE settings
+.idea
+.vscode

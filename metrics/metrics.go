@@ -44,22 +44,55 @@ var (
 		},
 		[]string{"version"},
 	)
-	PanelThreads = prometheus.NewGauge(
+	PanelGoroutines = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "x_ui_panel_threads",
-			Help: "3X-UI panel threads",
+			Name: "x_ui_panel_goroutines",
+			Help: "Goroutines running in the 3X-UI panel process (appStats.threads)",
 		},
 	)
-	PanelMemory = prometheus.NewGauge(
+	PanelMemoryBytes = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "x_ui_panel_memory",
-			Help: "3X-UI panel memory usage",
+			Name: "x_ui_panel_memory_bytes",
+			Help: "Resident memory of the 3X-UI panel process in bytes (appStats.mem)",
 		},
 	)
-	PanelUptime = prometheus.NewGauge(
+	// Info-style: value is always 1, the version lives in the label.
+	PanelVersion = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "x_ui_panel_uptime",
-			Help: "3X-UI panel uptime",
+			Name: "x_ui_panel_version",
+			Help: "3X-UI panel version, always 1; read the version label",
+		},
+		[]string{"version"},
+	)
+	// The signal to alert on; only the panel's "running" state counts as up.
+	XrayUp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "x_ui_xray_up",
+			Help: "1 when the Xray process is running, 0 when stopped or errored",
+		},
+	)
+	// Separate from XrayUp so free-form error text never lands on the alert metric.
+	XrayState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "x_ui_xray_state",
+			Help: "Xray process state reported by the panel, always 1; read the state and error labels",
+		},
+		[]string{"state", "error"},
+	)
+	// A vec with no labels so the series can be absent entirely: a plain Gauge
+	// would always publish 0, which is indistinguishable from "stopped" on
+	// panels built without AmneziaWG.
+	AmneziaWGUp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "x_ui_amneziawg_up",
+			Help: "1 when the embedded AmneziaWG interface is running, 0 when stopped; absent if the panel has no AmneziaWG",
+		},
+		[]string{},
+	)
+	XrayUptimeSeconds = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "x_ui_xray_uptime_seconds",
+			Help: "Uptime of the Xray process in seconds, 0 when Xray is stopped (appStats.uptime)",
 		},
 	)
 )

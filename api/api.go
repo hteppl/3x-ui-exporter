@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -14,8 +13,6 @@ import (
 	"sync"
 	"time"
 	"x-ui-exporter/metrics"
-
-	"github.com/digilolnet/client3xui"
 )
 
 type APIConfig struct {
@@ -29,6 +26,55 @@ type APIConfig struct {
 type APIClient struct {
 	config     APIConfig
 	httpClient *http.Client
+}
+
+// v3 API envelopes; only the fields the exporter reads are declared.
+type onlinesResponse struct {
+	Success bool     `json:"success"`
+	Msg     string   `json:"msg"`
+	Obj     []string `json:"obj"`
+}
+
+type serverStatusResponse struct {
+	Success bool   `json:"success"`
+	Msg     string `json:"msg"`
+	Obj     struct {
+		Xray struct {
+			Version  string `json:"version"`
+			State    string `json:"state"`
+			ErrorMsg string `json:"errorMsg"`
+		} `json:"xray"`
+		PanelVersion string `json:"panelVersion"`
+		AmneziaWG *struct {
+			Running bool `json:"running"`
+		} `json:"amneziawg"`
+		AppStats struct {
+			Threads uint32 `json:"threads"`
+			Mem     uint64 `json:"mem"`
+			Uptime  uint64 `json:"uptime"`
+		} `json:"appStats"`
+	} `json:"obj"`
+}
+
+type inboundsResponse struct {
+	Success bool      `json:"success"`
+	Msg     string    `json:"msg"`
+	Obj     []inbound `json:"obj"`
+}
+
+type inbound struct {
+	ID          int          `json:"id"`
+	Up          int64        `json:"up"`
+	Down        int64        `json:"down"`
+	Remark      string       `json:"remark"`
+	ClientStats []clientStat `json:"clientStats"`
+}
+
+type clientStat struct {
+	ID    int    `json:"id"`
+	Email string `json:"email"`
+	Up    int64  `json:"up"`
+	Down  int64  `json:"down"`
 }
 
 func NewAPIClient(cfg APIConfig) *APIClient {
@@ -48,45 +94,111 @@ func NewAPIClient(cfg APIConfig) *APIClient {
 	}
 }
 
-var (
-	cookieCache struct {
-		Cookie    http.Cookie
-		ExpiresAt time.Time
-		sync.Mutex
-	}
-
-	// Response object pools
-	apiResponsePool = sync.Pool{
-		New: func() interface{} {
-			return &client3xui.ApiResponse{}
-		},
-	}
-	serverStatusPool = sync.Pool{
-		New: func() interface{} {
-			return &client3xui.ServerStatusResponse{}
-		},
-	}
-	inboundsResponsePool = sync.Pool{
-		New: func() interface{} {
-			return &client3xui.GetInboundsResponse{}
-		},
-	}
-
-	// Buffer pool for request bodies
-	bufferPool = sync.Pool{
-		New: func() interface{} {
-			return new(bytes.Buffer)
-		},
-	}
+// 3X-UI blocks an IP/username pair for 15 minutes after 5 failed logins.
+const (
+	authRetryBaseDelay = 30 * time.Second
+	authRetryMaxDelay  = 15 * time.Minute
 )
 
-func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
-	cookieCache.Lock()
-	defer cookieCache.Unlock()
+var authCache struct {
+	Cookie      http.Cookie
+	CSRFToken   string
+	ExpiresAt   time.Time
+	Failures    int
+	NextRetryAt time.Time
+	sync.Mutex
+}
 
-	remainingTime := time.Until(cookieCache.ExpiresAt).Minutes()
-	if cookieCache.Cookie.Name != "" && remainingTime > 0 {
-		return &cookieCache.Cookie, nil
+// registerAuthFailure schedules the next permitted attempt. Caller holds the lock.
+func registerAuthFailure() time.Duration {
+	authCache.Failures++
+
+	delay := authRetryBaseDelay
+	for i := 1; i < authCache.Failures && delay < authRetryMaxDelay; i++ {
+		delay *= 2
+	}
+	if delay > authRetryMaxDelay {
+		delay = authRetryMaxDelay
+	}
+
+	authCache.NextRetryAt = time.Now().Add(delay)
+	return delay
+}
+
+// resetAuthFailures clears the backoff. Caller holds the lock.
+func resetAuthFailures() {
+	authCache.Failures = 0
+	authCache.NextRetryAt = time.Time{}
+}
+
+// fetchCSRFToken returns the v3.0+ CSRF token and the session cookie it is bound
+// to; both must ride along on /login. Returns ("", nil) on any failure.
+func (a *APIClient) fetchCSRFToken() (string, *http.Cookie) {
+	req, err := http.NewRequest(http.MethodGet, a.config.BaseURL+"/csrf-token", nil)
+	if err != nil {
+		return "", nil
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return "", nil
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil
+	}
+
+	var csrfResp struct {
+		Success bool   `json:"success"`
+		Obj     string `json:"obj"`
+	}
+	if err := json.Unmarshal(body, &csrfResp); err != nil || !csrfResp.Success || csrfResp.Obj == "" {
+		return "", nil
+	}
+
+	var sessionCookie *http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "3x-ui" {
+			sessionCookie = cookie
+		}
+	}
+
+	return csrfResp.Obj, sessionCookie
+}
+
+func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
+	authCache.Lock()
+	defer authCache.Unlock()
+
+	remainingTime := time.Until(authCache.ExpiresAt).Minutes()
+	if authCache.Cookie.Name != "" && remainingTime > 0 {
+		// Copy: the caller reads this after the lock is dropped, and a later
+		// login overwrites authCache.Cookie in place.
+		cookie := authCache.Cookie
+		return &cookie, nil
+	}
+
+	// A bad credential must not trip the panel's login limiter.
+	if wait := time.Until(authCache.NextRetryAt); wait > 0 {
+		return nil, fmt.Errorf(
+			"authentication backoff after %d failed attempt(s); retrying in %s",
+			authCache.Failures, wait.Round(time.Second),
+		)
+	}
+
+	// Without the CSRF token the panel returns HTTP 403 on /login.
+	csrfToken, csrfCookie := a.fetchCSRFToken()
+	if csrfToken == "" {
+		return nil, fmt.Errorf("could not obtain CSRF token; 3X-UI v3.0+ required")
 	}
 
 	path := a.config.BaseURL + "/login"
@@ -95,16 +207,16 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 		"password": {a.config.ApiPassword},
 	}
 
-	buf := bufferPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	buf.WriteString(data.Encode())
-	defer bufferPool.Put(buf)
-
-	req, err := http.NewRequest("POST", path, buf)
+	req, err := http.NewRequest("POST", path, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-CSRF-Token", csrfToken)
+	if csrfCookie != nil {
+		// The token is validated against the session that minted it.
+		req.AddCookie(csrfCookie)
+	}
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -119,100 +231,138 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusForbidden {
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf(
+			"authentication failed: HTTP 403 (CSRF token rejected?); backing off %s", delay,
+		)
+	}
+
 	var loginResp struct {
 		Success bool   `json:"success"`
 		Msg     string `json:"msg"`
 	}
 	if err := json.Unmarshal(body, &loginResp); err != nil {
-		return nil, err
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("authentication: unparseable login response: %w; backing off %s", err, delay)
 	}
 
 	if !loginResp.Success {
-		return nil, fmt.Errorf("authentication failed: %s", loginResp.Msg)
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("authentication failed: %s; backing off %s", loginResp.Msg, delay)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("authentication: code %s", resp.Status)
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("authentication: code %s; backing off %s", resp.Status, delay)
 	}
 
 	for _, cookie := range resp.Cookies() {
 		if cookie.Name == "3x-ui" {
-			cookieCache.Cookie = *cookie
-			cookieCache.ExpiresAt = time.Now().Add(time.Minute * 59)
+			authCache.Cookie = *cookie
+			authCache.ExpiresAt = time.Now().Add(time.Minute * 59)
 		}
 	}
 
-	if cookieCache.Cookie.Name == "" {
-		return nil, fmt.Errorf("no cookies found in auth response")
+	if authCache.Cookie.Name == "" {
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("no session cookie in auth response; backing off %s", delay)
 	}
 
-	return &cookieCache.Cookie, nil
+	authCache.CSRFToken = csrfToken
+	resetAuthFailures()
+
+	cookie := authCache.Cookie
+	return &cookie, nil
 }
 
 func (a *APIClient) FetchOnlineUsersCount(cookie *http.Cookie) error {
-	// Try the new path first for 3X-UI v2.7.0+
-	body, err := a.sendRequest("/panel/api/inbounds/onlines", http.MethodPost, cookie)
-	if err != nil || len(body) == 0 {
-		body, err = a.sendRequest("/panel/inbound/onlines", http.MethodPost, cookie)
-		if err != nil {
-			return fmt.Errorf("onlines (old path fallback): %w", err)
-		}
+	body, err := a.sendRequest("/panel/api/clients/onlines", http.MethodPost, cookie)
+	if err != nil {
+		return fmt.Errorf("onlines: %w", err)
 	}
 
-	response := apiResponsePool.Get().(*client3xui.ApiResponse)
-	defer apiResponsePool.Put(response)
-
-	if err := json.Unmarshal(body, response); err != nil {
+	var response onlinesResponse
+	if err := json.Unmarshal(body, &response); err != nil {
 		return fmt.Errorf("unmarshaling response: %w", err)
 	}
 
-	var arr []json.RawMessage
-	if err := json.Unmarshal(response.Obj, &arr); err != nil {
-		return fmt.Errorf("converting Obj as array: %w", err)
+	if !response.Success {
+		return fmt.Errorf("onlines: %s", response.Msg)
 	}
 
-	metrics.OnlineUsersCount.Set(float64(len(arr)))
+	metrics.OnlineUsersCount.Set(float64(len(response.Obj)))
 
 	return nil
 }
 
-func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
-	// Clear old version metric to avoid accumulating obsolete label values
+func (a *APIClient) FetchServerStatus(cookie *http.Cookie) (err error) {
+	// Drop obsolete label values.
 	metrics.XrayVersion.Reset()
+	metrics.PanelVersion.Reset()
+	metrics.XrayState.Reset()
+	metrics.AmneziaWGUp.Reset()
 
-	// Try GET first for 3X-UI v2.7.0+
-	body, err := a.sendRequest("/panel/api/server/status", http.MethodGet, cookie)
-	if err != nil || len(body) == 0 {
-		body, err = a.sendRequest("/server/status", http.MethodPost, cookie)
+	// The plain gauges below are not label-bearing, so Reset() cannot clear
+	// them. Without this an unreachable panel would leave x_ui_xray_up stuck
+	// at 1 while its companion series disappear, and the alert that METRICS.md
+	// recommends would never fire.
+	defer func() {
 		if err != nil {
-			return fmt.Errorf("server status (POST fallback): %w", err)
+			metrics.XrayUp.Set(0)
 		}
+	}()
+
+	body, err := a.sendRequest("/panel/api/server/status", http.MethodGet, cookie)
+	if err != nil {
+		return fmt.Errorf("server status: %w", err)
 	}
 
-	response := serverStatusPool.Get().(*client3xui.ServerStatusResponse)
-	defer serverStatusPool.Put(response)
-
-	if err := json.Unmarshal(body, response); err != nil {
+	var response serverStatusResponse
+	if err := json.Unmarshal(body, &response); err != nil {
 		return fmt.Errorf("unmarshaling response: %w", err)
 	}
 
-	// XRay metrics
+	if !response.Success {
+		return fmt.Errorf("server status: %s", response.Msg)
+	}
+
+	// Parsing preserved from pre-v3 so the gauge value per version is unchanged.
 	xrayVersion := strings.ReplaceAll(response.Obj.Xray.Version, ".", "")
 	num, _ := strconv.ParseFloat(xrayVersion, 64)
 	metrics.XrayVersion.WithLabelValues(response.Obj.Xray.Version).Set(num)
 
-	// Panel metrics
-	metrics.PanelThreads.Set(float64(response.Obj.AppStats.Threads))
-	metrics.PanelMemory.Set(float64(response.Obj.AppStats.Mem))
-	metrics.PanelUptime.Set(float64(response.Obj.AppStats.Uptime))
+	if response.Obj.PanelVersion != "" {
+		metrics.PanelVersion.WithLabelValues(response.Obj.PanelVersion).Set(1)
+	}
+
+	// Panel reports "running", "stop" or "error"; only "running" is up.
+	metrics.XrayState.WithLabelValues(response.Obj.Xray.State, response.Obj.Xray.ErrorMsg).Set(1)
+	if response.Obj.Xray.State == "running" {
+		metrics.XrayUp.Set(1)
+	} else {
+		metrics.XrayUp.Set(0)
+	}
+
+	// Absent on panels built without AmneziaWG; leave the metric unset there
+	// rather than publishing a permanent 0.
+	if response.Obj.AmneziaWG != nil {
+		if response.Obj.AmneziaWG.Running {
+			metrics.AmneziaWGUp.WithLabelValues().Set(1)
+		} else {
+			metrics.AmneziaWGUp.WithLabelValues().Set(0)
+		}
+	}
+
+	metrics.PanelGoroutines.Set(float64(response.Obj.AppStats.Threads))
+	metrics.PanelMemoryBytes.Set(float64(response.Obj.AppStats.Mem))
+	metrics.XrayUptimeSeconds.Set(float64(response.Obj.AppStats.Uptime))
 
 	return nil
 }
 
 func (a *APIClient) FetchInboundsList(cookie *http.Cookie) error {
-	// Clear old metric values to avoid exposing stale data from previous
-	// updates. Resetting ensures obsolete label combinations are removed
-	// before setting new values.
+	// Drop obsolete label combinations before setting new values.
 	metrics.InboundUp.Reset()
 	metrics.InboundDown.Reset()
 	metrics.ClientUp.Reset()
@@ -223,39 +373,30 @@ func (a *APIClient) FetchInboundsList(cookie *http.Cookie) error {
 		return fmt.Errorf("inbounds list: %w", err)
 	}
 
-	response := inboundsResponsePool.Get().(*client3xui.GetInboundsResponse)
-	defer inboundsResponsePool.Put(response)
-
-	if err := json.Unmarshal(body, response); err != nil {
+	var response inboundsResponse
+	if err := json.Unmarshal(body, &response); err != nil {
 		return fmt.Errorf("unmarshaling response: %w", err)
 	}
 
-	for _, inbound := range response.Obj {
-		iid := strconv.Itoa(inbound.ID)
-		metrics.InboundUp.WithLabelValues(
-			iid, inbound.Remark,
-		).Set(float64(inbound.Up))
+	if !response.Success {
+		return fmt.Errorf("inbounds list: %s", response.Msg)
+	}
 
-		metrics.InboundDown.WithLabelValues(
-			iid, inbound.Remark,
-		).Set(float64(inbound.Down))
+	for _, inb := range response.Obj {
+		iid := strconv.Itoa(inb.ID)
+		metrics.InboundUp.WithLabelValues(iid, inb.Remark).Set(float64(inb.Up))
+		metrics.InboundDown.WithLabelValues(iid, inb.Remark).Set(float64(inb.Down))
 
 		n := a.config.ClientsBytesRows
 		if n == 0 {
-			for _, client := range inbound.ClientStats {
+			for _, client := range inb.ClientStats {
 				cid := strconv.Itoa(client.ID)
-				metrics.ClientUp.WithLabelValues(
-					cid, client.Email,
-				).Set(float64(client.Up))
-
-				metrics.ClientDown.WithLabelValues(
-					cid, client.Email,
-				).Set(float64(client.Down))
+				metrics.ClientUp.WithLabelValues(cid, client.Email).Set(float64(client.Up))
+				metrics.ClientDown.WithLabelValues(cid, client.Email).Set(float64(client.Down))
 			}
 		} else {
-			// Top N by Upload
-			sortedUp := make([]client3xui.ClientStat, len(inbound.ClientStats))
-			copy(sortedUp, inbound.ClientStats)
+			sortedUp := make([]clientStat, len(inb.ClientStats))
+			copy(sortedUp, inb.ClientStats)
 			sort.Slice(sortedUp, func(i, j int) bool {
 				return sortedUp[i].Up > sortedUp[j].Up
 			})
@@ -266,9 +407,8 @@ func (a *APIClient) FetchInboundsList(cookie *http.Cookie) error {
 				).Set(float64(client.Up))
 			}
 
-			// Top N by Download
-			sortedDown := make([]client3xui.ClientStat, len(inbound.ClientStats))
-			copy(sortedDown, inbound.ClientStats)
+			sortedDown := make([]clientStat, len(inb.ClientStats))
+			copy(sortedDown, inb.ClientStats)
 			sort.Slice(sortedDown, func(i, j int) bool {
 				return sortedDown[i].Down > sortedDown[j].Down
 			})
@@ -294,6 +434,15 @@ func (a *APIClient) createRequest(method, path string, cookie *http.Cookie) (*ht
 
 	req.Header.Set("Accept", "application/json")
 	req.AddCookie(cookie)
+
+	// Some panels reject even safe methods without the token; empty is a no-op.
+	authCache.Lock()
+	token := authCache.CSRFToken
+	authCache.Unlock()
+	if token != "" {
+		req.Header.Set("X-CSRF-Token", token)
+	}
+
 	return req, nil
 }
 

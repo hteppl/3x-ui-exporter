@@ -7,7 +7,8 @@ After=network.target
 User=x-ui-exporter
 Group=x-ui-exporter
 Type=simple
-ExecStart=/usr/local/bin/x-ui-exporter --config-file=/etc/x-ui-exporter/config.yaml
+EnvironmentFile=/etc/x-ui-exporter/.env
+ExecStart=/usr/local/bin/x-ui-exporter
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
