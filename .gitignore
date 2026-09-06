@@ -9,8 +9,5 @@ dist/
 marzban-exporter
 x-ui-exporter
 
-# Local config
-config.yaml
-
 # Local env
 .env

@@ -5,7 +5,7 @@ PURPLE='\033[1;35m'
 NC='\033[0m'
 
 # GitHub repository to install from (this fork). Override to use another fork.
-REPO="${REPO:-fffedor/3x-ui-exporter}"
+REPO="${REPO:-hteppl/3x-ui-exporter}"
 
 step() {
   echo -e "\n${GREEN}[$1/8] $2${NC}"
@@ -116,10 +116,10 @@ if [ $? -ne 0 ]; then
 fi
 
 # Check if config file already exists
-CONFIG_FILE="/etc/x-ui-exporter/config.yaml"
-SKIP_CONFIG_SETUP=0
-if [ -f "$CONFIG_FILE" ]; then
-    echo "Configuration file already exists at $CONFIG_FILE"
+ENV_FILE_PATH="/etc/x-ui-exporter/.env"
+SKIP_ENV_SETUP=0
+if [ -f "$ENV_FILE_PATH" ]; then
+    echo "Env file already exists at $ENV_FILE_PATH"
     while true; do
         read -p "Do you want to overwrite the existing config? (y/N): " yn
         case $yn in
@@ -129,19 +129,19 @@ if [ -f "$CONFIG_FILE" ]; then
                 ;;
             * )
                 echo "Skipping config setup."
-                SKIP_CONFIG_SETUP=1
+                SKIP_ENV_SETUP=1
                 ;;
         esac
-        [ $SKIP_CONFIG_SETUP -eq 1 ] && break
+        [ $SKIP_ENV_SETUP -eq 1 ] && break
     done
 fi
 
-if [ $SKIP_CONFIG_SETUP -eq 0 ]; then
-    # Download example config file
-    echo "Downloading example config from GitHub..."
-    curl -s -o "$CONFIG_FILE" "https://raw.githubusercontent.com/${REPO}/main/config-example.yaml"
+if [ $SKIP_ENV_SETUP -eq 0 ]; then
+    # Download example env file
+    echo "Downloading example env file from GitHub..."
+    curl -s -o "$ENV_FILE_PATH" "https://raw.githubusercontent.com/${REPO}/main/.env.sample"
     if [ $? -ne 0 ]; then
-        echo "Failed to download config file. Installation aborted."
+        echo "Failed to download env file. Installation aborted."
         exit 1
     fi
 
@@ -222,21 +222,21 @@ if [ $SKIP_CONFIG_SETUP -eq 0 ]; then
         confirm_continue_or_abort
     fi
 
-    # Update the config file with user input
-    echo "Updating configuration file with provided details..."
+    # Update the env file with user input
+    echo "Updating env file with provided details..."
     # Escape special characters in variables for sed
     PANEL_URL_ESCAPED=$(echo "$PANEL_URL" | sed 's/[\/&]/\\&/g')
     PANEL_USERNAME_ESCAPED=$(echo "$PANEL_USERNAME" | sed 's/[\/&]/\\&/g')
     PANEL_PASSWORD_ESCAPED=$(echo "$PANEL_PASSWORD" | sed 's/[\/&]/\\&/g')
 
-    sed -i "s|panel-base-url:.*|panel-base-url: \"${PANEL_URL_ESCAPED}\"|" "$CONFIG_FILE"
-    sed -i "s|panel-username:.*|panel-username: \"${PANEL_USERNAME_ESCAPED}\"|" "$CONFIG_FILE"
-    sed -i "s|panel-password:.*|panel-password: \"${PANEL_PASSWORD_ESCAPED}\"|" "$CONFIG_FILE"
+    sed -i "s|^PANEL_BASE_URL=.*|PANEL_BASE_URL=${PANEL_URL_ESCAPED}|" "$ENV_FILE_PATH"
+    sed -i "s|^PANEL_USERNAME=.*|PANEL_USERNAME=${PANEL_USERNAME_ESCAPED}|" "$ENV_FILE_PATH"
+    sed -i "s|^PANEL_PASSWORD=.*|PANEL_PASSWORD=${PANEL_PASSWORD_ESCAPED}|" "$ENV_FILE_PATH"
 else
-    echo "Using existing configuration file without changes."
+    echo "Using existing env file without changes."
 fi
 
-chmod 644 "$CONFIG_FILE"
+chmod 640 "$ENV_FILE_PATH"
 chown -R x-ui-exporter:x-ui-exporter /etc/x-ui-exporter
 
 # Create systemd service file
@@ -287,7 +287,7 @@ sudo systemctl status x-ui-exporter --no-pager
 echo -e "\n${PURPLE}✅ 3X-UI Exporter is installed!"
 echo -e "${GREEN}\nCheck status:      ${NC}sudo systemctl status x-ui-exporter --no-pager"
 echo -e "${GREEN}Binary path:       ${NC}/usr/local/bin/x-ui-exporter"
-echo -e "${GREEN}Config path:       ${NC}$CONFIG_FILE"
+echo -e "${GREEN}Config path:       ${NC}$ENV_FILE_PATH"
 echo ""
 echo -e "You can view logs with: journalctl -u x-ui-exporter.service"
 echo -e "Support the project: \033[1;33mhttps://pay.cloudtips.ru/p/67507843${NC}"

@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/go-co-op/gocron v1.37.0
+	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.21.1
 )
 
@@ -25,5 +26,4 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
-	gopkg.in/yaml.v3 v3.0.1
 )

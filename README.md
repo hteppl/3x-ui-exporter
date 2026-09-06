@@ -27,8 +27,8 @@ data readily available for integration with the Prometheus monitoring system.
 - **3X-UI Monitoring**: Provides detailed XRay version information and additional operational metrics from 3X-UI.
 - **Version and Start Time Information**: Delivers core version information and confirms whether the core service has
   started successfully.
-- **Flexible Configuration Options**: Supports customization through environment variables, command-line arguments, and
-  YAML configuration files, providing maximum flexibility for different deployment scenarios.
+- **Flexible Configuration Options**: Supports customization through environment variables, `.env` files, and
+  command-line arguments, providing maximum flexibility for different deployment scenarios.
 - **Multi-Architecture Support**: Features Docker images for multiple architectures, including AMD64 and ARM64, ensuring
   compatibility across diverse deployment environments.
 - **Enhanced Security**: Offers optional BasicAuth protection for the metrics endpoint, providing an additional layer of
@@ -81,14 +81,13 @@ System metrics (`version` param for `x_ui_xray_version`):
 
 ## Configuration
 
-3X-UI Metrics Exporter can be configured using environment variables, command-line arguments, or a YAML configuration
-file. These are alternative methods of configuration, and you should choose one approach for your deployment.
+3X-UI Metrics Exporter is configured with environment variables, which can be supplied directly or through a `.env`
+file. Every variable also has an equivalent command-line argument.
 
 Below is a table of configuration options:
 
 | Variable Name          | Command-Line Argument    | Required | Default Value              | Description                                                               |
 | ---------------------- | ------------------------ | -------- | -------------------------- | ------------------------------------------------------------------------- |
-| `CONFIG_FILE`          | `--config-file`          | No       | N/A                        | Path to YAML configuration file. When provided, CLI flags are ignored     |
 | `PANEL_BASE_URL`       | `--panel-base-url`       | Yes      | `https://<your-panel-url>` | URL of the 3X-UI management panel                                         |
 | `PANEL_USERNAME`       | `--panel-username`       | Yes      | `<your-panel-username>`    | Username for the 3X-UI panel                                              |
 | `PANEL_PASSWORD`       | `--panel-password`       | Yes      | `<your-panel-password>`    | Password for the 3X-UI panel                                              |
@@ -102,39 +101,42 @@ Below is a table of configuration options:
 | `UPDATE_INTERVAL`      | `--update-interval`      | No       | `30`                       | Interval (in seconds) for metrics update                                  |
 | `TIMEZONE`             | `--timezone`             | No       | `UTC`                      | Timezone for correct time display                                         |
 
-### YAML Configuration
+### Env File Configuration
 
-You can use a YAML configuration file to configure the exporter by providing the `--config-file` flag. When using a
-configuration file, all settings are read from the file and any command-line arguments are ignored. The YAML
-configuration file should contain the same parameters as the command-line arguments, but in YAML format.
+The exporter loads a `.env` file from its working directory on startup. A sample with every option and its default is
+provided as [`.env.sample`](.env.sample):
 
-A sample configuration file `config-example.yaml` is provided with the project, which you can use as a template for your
-own configuration. The structure of the YAML file matches the command-line arguments.
-
-Example YAML configuration:
-
-```yaml
-# 3X-UI panel connection details
-panel-base-url: "https://your-panel-url"
-panel-username: "your-panel-username"
-panel-password: "your-panel-password"
-insecure-skip-verify: false
-
-# General settings
-update-interval: 30
-timezone: "UTC"
-
-# Metrics server configuration
-metrics-ip: "0.0.0.0"
-metrics-port: 9090
-clients-bytes-rows: 0
-metrics-protected: false
-metrics-username: "metricsUser"
-metrics-password: "MetricsVeryHardPassword"
+```bash
+cp .env.sample .env
 ```
 
-> **Note:** When using a configuration file with the `--config-file` flag, all settings are taken from the configuration
-> file, and any other command-line arguments are ignored.
+```dotenv
+# 3X-UI panel connection details (required)
+PANEL_BASE_URL=https://your-panel-url
+PANEL_USERNAME=your-panel-username
+PANEL_PASSWORD=your-panel-password
+
+# General settings
+UPDATE_INTERVAL=30
+TIMEZONE=UTC
+
+# Metrics server configuration
+METRICS_IP=0.0.0.0
+METRICS_PORT=9090
+```
+
+Set `ENV_FILE` to load the file from another location:
+
+```bash
+ENV_FILE=/etc/x-ui-exporter/.env ./x-ui-exporter
+```
+
+> **Note:** A missing `.env` is not an error — the exporter runs on environment variables and command-line arguments
+> alone. A file named explicitly by `ENV_FILE` that does not exist _is_ an error.
+
+Values are applied in order of increasing precedence: the `.env` file, then real environment variables, then
+command-line arguments. A variable already exported in the environment (or set by Docker or systemd) overrides the file,
+and a flag overrides both.
 
 ## Installation
 
@@ -146,7 +148,7 @@ deployment preferences. Select the installation method that aligns best with you
 The easiest way to install the exporter is using automatic installation script:
 
 ```bash
-bash <(curl -fsSL raw.githubusercontent.com/fffedor/3x-ui-exporter/main/install.sh)
+bash <(curl -fsSL raw.githubusercontent.com/hteppl/3x-ui-exporter/main/install.sh)
 ```
 
 During installation, you'll be prompted to enter:
@@ -178,17 +180,15 @@ If you prefer manual installation, download the latest binary from the
                 --panel-password="your-panel-password"
 ```
 
-#### Running with a configuration file:
+#### Running with an env file:
 
-1. Create a `config.yaml` file based on the example configuration
-2. Run the exporter:
+1. Create a `.env` file based on [`.env.sample`](.env.sample)
+2. Run the exporter from the same directory:
 
 ```bash
-./x-ui-exporter --config-file=config.yaml
+cp .env.sample .env
+./x-ui-exporter
 ```
-
-> **Important:** The configuration file approach and command-line arguments cannot be combined. When using a
-> configuration file, any command-line arguments are ignored.
 
 ### Docker Installation
 
