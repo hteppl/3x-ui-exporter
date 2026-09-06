@@ -61,7 +61,12 @@ func main() {
 
 	fmt.Println("3X-UI Exporter (https://github.com/hteppl/3x-ui-exporter/)", version)
 
-	s, err := gocron.NewScheduler(gocron.WithLocation(time.Local))
+	location, err := time.LoadLocation(cliConfig.TimeZone)
+	if err != nil {
+		log.Fatalf("Load timezone %q: %v", cliConfig.TimeZone, err)
+	}
+
+	s, err := gocron.NewScheduler(gocron.WithLocation(location))
 	if err != nil {
 		log.Fatalf("Create scheduler: %v", err)
 	}
@@ -102,6 +107,7 @@ func main() {
 			}
 		}),
 		gocron.WithStartAt(gocron.WithStartImmediately()),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
 	if err != nil {
 		log.Fatalf("Schedule job: %v", err)

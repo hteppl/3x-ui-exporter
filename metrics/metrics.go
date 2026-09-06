@@ -79,11 +79,15 @@ var (
 		},
 		[]string{"state", "error"},
 	)
-	AmneziaWGUp = prometheus.NewGauge(
+	// A vec with no labels so the series can be absent entirely: a plain Gauge
+	// would always publish 0, which is indistinguishable from "stopped" on
+	// panels built without AmneziaWG.
+	AmneziaWGUp = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "x_ui_amneziawg_up",
-			Help: "1 when the embedded AmneziaWG interface is running, 0 otherwise",
+			Help: "1 when the embedded AmneziaWG interface is running, 0 when stopped; absent if the panel has no AmneziaWG",
 		},
+		[]string{},
 	)
 	XrayUptimeSeconds = prometheus.NewGauge(
 		prometheus.GaugeOpts{

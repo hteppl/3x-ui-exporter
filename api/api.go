@@ -45,7 +45,7 @@ type serverStatusResponse struct {
 			ErrorMsg string `json:"errorMsg"`
 		} `json:"xray"`
 		PanelVersion string `json:"panelVersion"`
-		AmneziaWG    struct {
+		AmneziaWG *struct {
 			Running bool `json:"running"`
 		} `json:"amneziawg"`
 		AppStats struct {
@@ -181,7 +181,10 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 
 	remainingTime := time.Until(authCache.ExpiresAt).Minutes()
 	if authCache.Cookie.Name != "" && remainingTime > 0 {
-		return &authCache.Cookie, nil
+		// Copy: the caller reads this after the lock is dropped, and a later
+		// login overwrites authCache.Cookie in place.
+		cookie := authCache.Cookie
+		return &cookie, nil
 	}
 
 	// A bad credential must not trip the panel's login limiter.
@@ -240,7 +243,8 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 		Msg     string `json:"msg"`
 	}
 	if err := json.Unmarshal(body, &loginResp); err != nil {
-		return nil, err
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("authentication: unparseable login response: %w; backing off %s", err, delay)
 	}
 
 	if !loginResp.Success {
@@ -249,7 +253,8 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("authentication: code %s", resp.Status)
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("authentication: code %s; backing off %s", resp.Status, delay)
 	}
 
 	for _, cookie := range resp.Cookies() {
@@ -260,13 +265,15 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 	}
 
 	if authCache.Cookie.Name == "" {
-		return nil, fmt.Errorf("no cookies found in auth response")
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("no session cookie in auth response; backing off %s", delay)
 	}
 
 	authCache.CSRFToken = csrfToken
 	resetAuthFailures()
 
-	return &authCache.Cookie, nil
+	cookie := authCache.Cookie
+	return &cookie, nil
 }
 
 func (a *APIClient) FetchOnlineUsersCount(cookie *http.Cookie) error {
@@ -289,11 +296,22 @@ func (a *APIClient) FetchOnlineUsersCount(cookie *http.Cookie) error {
 	return nil
 }
 
-func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
+func (a *APIClient) FetchServerStatus(cookie *http.Cookie) (err error) {
 	// Drop obsolete label values.
 	metrics.XrayVersion.Reset()
 	metrics.PanelVersion.Reset()
 	metrics.XrayState.Reset()
+	metrics.AmneziaWGUp.Reset()
+
+	// The plain gauges below are not label-bearing, so Reset() cannot clear
+	// them. Without this an unreachable panel would leave x_ui_xray_up stuck
+	// at 1 while its companion series disappear, and the alert that METRICS.md
+	// recommends would never fire.
+	defer func() {
+		if err != nil {
+			metrics.XrayUp.Set(0)
+		}
+	}()
 
 	body, err := a.sendRequest("/panel/api/server/status", http.MethodGet, cookie)
 	if err != nil {
@@ -326,10 +344,14 @@ func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
 		metrics.XrayUp.Set(0)
 	}
 
-	if response.Obj.AmneziaWG.Running {
-		metrics.AmneziaWGUp.Set(1)
-	} else {
-		metrics.AmneziaWGUp.Set(0)
+	// Absent on panels built without AmneziaWG; leave the metric unset there
+	// rather than publishing a permanent 0.
+	if response.Obj.AmneziaWG != nil {
+		if response.Obj.AmneziaWG.Running {
+			metrics.AmneziaWGUp.WithLabelValues().Set(1)
+		} else {
+			metrics.AmneziaWGUp.WithLabelValues().Set(0)
+		}
 	}
 
 	metrics.PanelGoroutines.Set(float64(response.Obj.AppStats.Threads))

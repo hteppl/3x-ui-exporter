@@ -117,8 +117,35 @@ fi
 
 # Check if config file already exists
 ENV_FILE_PATH="/etc/x-ui-exporter/.env"
+PREV_UMASK=$(umask)
+umask 077
 LEGACY_CONFIG_PATH="/etc/x-ui-exporter/config.yaml"
 SKIP_ENV_SETUP=0
+
+# env_set writes KEY=value into the env file, replacing any existing entry.
+# The value is quoted the same way migrated values are, so spaces and "#"
+# survive both the exporter's parser and systemd's EnvironmentFile parser.
+env_set() {
+    local key="$1" value="$2" quoted escaped
+
+    case "$value" in
+        *"'"*)
+            escaped="$(printf '%s' "$value" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+            quoted="\"${escaped}\""
+            ;;
+        *)
+            quoted="'${value}'"
+            ;;
+    esac
+
+    # Drop any existing definition, then append. Rewriting with sed would break
+    # on values containing its delimiter.
+    if [ -f "$ENV_FILE_PATH" ]; then
+        grep -v "^${key}=" "$ENV_FILE_PATH" > "${ENV_FILE_PATH}.tmp" 2>/dev/null || :
+        mv "${ENV_FILE_PATH}.tmp" "$ENV_FILE_PATH"
+    fi
+    printf '%s=%s\n' "$key" "$quoted" >> "$ENV_FILE_PATH"
+}
 
 # Migrate a pre-.env installation. Versions before the .env switch stored their
 # settings in config.yaml; convert it in place so upgrades keep working without
@@ -269,15 +296,26 @@ if [ $SKIP_ENV_SETUP -eq 0 ]; then
     echo "Validating connection to panel..."
     TEMP_RESPONSE=$(mktemp)
     COOKIE_JAR=$(mktemp)
+    CURL_TLS_OPTS=()
 
     # 1) Mint a CSRF token (v3.0+); the session cookie is stored in COOKIE_JAR.
-    CSRF_TOKEN=$(curl -s --max-time 15 -c "$COOKIE_JAR" -H "Accept: application/json" \
-        "${PANEL_URL}/csrf-token" | grep -Po '"obj"\s*:\s*"\K[^"]*')
+    CSRF_BODY=$(curl -s --max-time 15 -c "$COOKIE_JAR" -H "Accept: application/json" \
+        "${PANEL_URL}/csrf-token")
+    CSRF_EXIT_CODE=$?
+    if [ $CSRF_EXIT_CODE -eq 60 ]; then
+        echo "Panel certificate could not be verified; retrying without verification."
+        echo "Remember to set INSECURE_SKIP_VERIFY=true in $ENV_FILE_PATH."
+        CURL_TLS_OPTS=(-k)
+        CSRF_BODY=$(curl -s -k --max-time 15 -c "$COOKIE_JAR" -H "Accept: application/json" \
+            "${PANEL_URL}/csrf-token")
+        CSRF_EXIT_CODE=$?
+    fi
+    CSRF_TOKEN=$(echo "$CSRF_BODY" | sed -n 's/.*"obj"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 
     # 2) Log in carrying the CSRF token + session cookie, form-urlencoded like the exporter.
     CSRF_HEADER=()
     [ -n "$CSRF_TOKEN" ] && CSRF_HEADER=(-H "X-CSRF-Token: ${CSRF_TOKEN}")
-    LOGIN_RESULT=$(curl -s --max-time 15 -w "%{http_code}" -o "$TEMP_RESPONSE" -X POST "${PANEL_URL}/login" \
+    LOGIN_RESULT=$(curl -s "${CURL_TLS_OPTS[@]}" --max-time 15 -w "%{http_code}" -o "$TEMP_RESPONSE" -X POST "${PANEL_URL}/login" \
         -b "$COOKIE_JAR" \
         "${CSRF_HEADER[@]}" \
         --data-urlencode "username=${PANEL_USERNAME}" \
@@ -285,10 +323,14 @@ if [ $SKIP_ENV_SETUP -eq 0 ]; then
     CURL_EXIT_CODE=$?
 
     LOGIN_BODY=$(cat "$TEMP_RESPONSE" 2>/dev/null)
-    LOGIN_MSG=$(echo "$LOGIN_BODY" | grep -Po '"msg"\s*:\s*"\K[^"]*')
+    LOGIN_MSG=$(echo "$LOGIN_BODY" | sed -n 's/.*"msg"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
     rm -f "$TEMP_RESPONSE" "$COOKIE_JAR"
 
-    if [ $CURL_EXIT_CODE -ne 0 ]; then
+    if [ $CSRF_EXIT_CODE -ne 0 ]; then
+        echo "Failed to reach ${PANEL_URL}/csrf-token (curl exit code: $CSRF_EXIT_CODE)."
+        echo "Please check if the panel URL is correct and the server is reachable."
+        confirm_continue_or_abort
+    elif [ $CURL_EXIT_CODE -ne 0 ]; then
         echo "Failed to connect to panel. Network error (curl exit code: $CURL_EXIT_CODE)"
         echo "Please check if the panel URL is correct and the server is reachable."
         confirm_continue_or_abort
@@ -304,22 +346,20 @@ if [ $SKIP_ENV_SETUP -eq 0 ]; then
         confirm_continue_or_abort
     fi
 
-    # Update the env file with user input
+    # Update the env file with user input. Values go through env_set rather
+    # than sed: a password containing the sed delimiter used to abort the
+    # substitution silently, leaving the sample placeholder in place.
     echo "Updating env file with provided details..."
-    # Escape special characters in variables for sed
-    PANEL_URL_ESCAPED=$(echo "$PANEL_URL" | sed 's/[\/&]/\\&/g')
-    PANEL_USERNAME_ESCAPED=$(echo "$PANEL_USERNAME" | sed 's/[\/&]/\\&/g')
-    PANEL_PASSWORD_ESCAPED=$(echo "$PANEL_PASSWORD" | sed 's/[\/&]/\\&/g')
-
-    sed -i "s|^PANEL_BASE_URL=.*|PANEL_BASE_URL=${PANEL_URL_ESCAPED}|" "$ENV_FILE_PATH"
-    sed -i "s|^PANEL_USERNAME=.*|PANEL_USERNAME=${PANEL_USERNAME_ESCAPED}|" "$ENV_FILE_PATH"
-    sed -i "s|^PANEL_PASSWORD=.*|PANEL_PASSWORD=${PANEL_PASSWORD_ESCAPED}|" "$ENV_FILE_PATH"
+    env_set PANEL_BASE_URL "$PANEL_URL"
+    env_set PANEL_USERNAME "$PANEL_USERNAME"
+    env_set PANEL_PASSWORD "$PANEL_PASSWORD"
 else
     echo "Using existing env file without changes."
 fi
 
 chmod 640 "$ENV_FILE_PATH"
 chown -R x-ui-exporter:x-ui-exporter /etc/x-ui-exporter
+umask "$PREV_UMASK"
 
 # Create systemd service file
 step 6 "Downloading systemd service file from GitHub..."

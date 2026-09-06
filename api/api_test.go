@@ -124,6 +124,8 @@ func resetAuthCache() {
 	authCache.Cookie = http.Cookie{}
 	authCache.CSRFToken = ""
 	authCache.ExpiresAt = time.Time{}
+	authCache.Failures = 0
+	authCache.NextRetryAt = time.Time{}
 	authCache.Unlock()
 }
 
