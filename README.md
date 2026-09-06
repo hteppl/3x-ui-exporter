@@ -40,8 +40,8 @@ data readily available for integration with the Prometheus monitoring system.
 
 ## Metrics
 
-3X-UI Metrics Exporter exposes nine Prometheus gauges covering online users, per-client and per-inbound traffic, and
-panel health.
+3X-UI Metrics Exporter exposes thirteen Prometheus gauges covering online users, per-client and per-inbound traffic,
+Xray health, and panel diagnostics.
 
 **See [METRICS.md](METRICS.md) for the complete reference** — every metric name, type, and label, along with example
 PromQL queries and the gauge-semantics caveats that matter when querying byte totals.

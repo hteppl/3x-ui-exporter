@@ -7,19 +7,23 @@ The endpoint can be protected with BasicAuth — see `METRICS_PROTECTED` in the
 
 ## At a Glance
 
-| Metric                    | Labels         | What it tells you                      |
-| ------------------------- | -------------- | -------------------------------------- |
-| `x_ui_total_online_users` | —              | How many users are connected right now |
-| `x_ui_client_up_bytes`    | `id`, `email`  | Lifetime upload per client             |
-| `x_ui_client_down_bytes`  | `id`, `email`  | Lifetime download per client           |
-| `x_ui_inbound_up_bytes`   | `id`, `remark` | Lifetime upload per inbound            |
-| `x_ui_inbound_down_bytes` | `id`, `remark` | Lifetime download per inbound          |
-| `x_ui_xray_version`       | `version`      | Which XRay build the panel is running  |
-| `x_ui_panel_threads`      | —              | Threads used by the panel process      |
-| `x_ui_panel_memory`       | —              | Memory used by the panel process       |
-| `x_ui_panel_uptime`       | —              | How long the panel has been running    |
+| Metric                     | Labels           | What it tells you                              |
+| -------------------------- | ---------------- | ---------------------------------------------- |
+| `x_ui_total_online_users`  | —                | How many users are connected right now         |
+| `x_ui_client_up_bytes`     | `id`, `email`    | Lifetime upload per client                     |
+| `x_ui_client_down_bytes`   | `id`, `email`    | Lifetime download per client                   |
+| `x_ui_inbound_up_bytes`    | `id`, `remark`   | Lifetime upload per inbound                    |
+| `x_ui_inbound_down_bytes`  | `id`, `remark`   | Lifetime download per inbound                  |
+| `x_ui_xray_version`        | `version`        | Which XRay build the panel is running          |
+| `x_ui_panel_version`       | `version`        | Which 3X-UI panel version is running           |
+| `x_ui_xray_up`             | —                | Whether Xray is running (1) or not (0)         |
+| `x_ui_xray_state`          | `state`, `error` | The panel's own words for Xray's state         |
+| `x_ui_amneziawg_up`        | —                | Whether the embedded AmneziaWG interface is up |
+| `x_ui_panel_goroutines`    | —                | Goroutines running in the panel process        |
+| `x_ui_panel_memory_bytes`  | —                | Memory used by the panel process, in bytes     |
+| `x_ui_xray_uptime_seconds` | —                | How long **Xray** has been running, in seconds |
 
-All nine are Prometheus **gauges**. See [Before You Write Queries](#before-you-write-queries) for what that means in
+All thirteen are Prometheus **gauges**. See [Before You Write Queries](#before-you-write-queries) for what that means in
 practice.
 
 ## Users
@@ -65,12 +69,16 @@ panel. Inbound totals are always exported, regardless of `CLIENTS_BYTES_ROWS`.
 
 ## System
 
-| Name                 | Type  | Labels    | Description                               |
-| -------------------- | ----- | --------- | ----------------------------------------- |
-| `x_ui_xray_version`  | Gauge | `version` | XRay version used by 3X-UI                |
-| `x_ui_panel_threads` | Gauge | —         | 3X-UI panel threads (`appStats.threads`)  |
-| `x_ui_panel_memory`  | Gauge | —         | 3X-UI panel memory usage (`appStats.mem`) |
-| `x_ui_panel_uptime`  | Gauge | —         | 3X-UI panel uptime (`appStats.uptime`)    |
+| Name                       | Type  | Labels           | Description                                          |
+| -------------------------- | ----- | ---------------- | ---------------------------------------------------- |
+| `x_ui_xray_version`        | Gauge | `version`        | XRay version used by 3X-UI                           |
+| `x_ui_panel_version`       | Gauge | `version`        | 3X-UI panel version; value is always 1               |
+| `x_ui_xray_up`             | Gauge | —                | 1 when Xray is running, 0 when stopped or errored    |
+| `x_ui_xray_state`          | Gauge | `state`, `error` | Xray state as reported; value is always 1            |
+| `x_ui_amneziawg_up`        | Gauge | —                | 1 when the embedded AmneziaWG interface is running   |
+| `x_ui_panel_goroutines`    | Gauge | —                | Goroutines in the panel process (`appStats.threads`) |
+| `x_ui_panel_memory_bytes`  | Gauge | —                | Panel process memory in bytes (`appStats.mem`)       |
+| `x_ui_xray_uptime_seconds` | Gauge | —                | Xray process uptime in seconds (`appStats.uptime`)   |
 
 **`x_ui_xray_version` is unusual.** The useful part is the `version` label, which carries the real version string such
 as `25.1.30`. The sample _value_ is that string with the dots removed and parsed as a number — `25.1.30` becomes `25130`
@@ -80,9 +88,25 @@ as `25.1.30`. The sample _value_ is that string with the dots removed and parsed
 x_ui_xray_version{version="25.1.30"}
 ```
 
-**The three panel metrics are passed through untouched.** The exporter reads `appStats` from the panel and exports the
-values as-is, without converting or labelling units. Check the numbers against your own panel before you put them on a
-dashboard axis or write a threshold alert.
+**`x_ui_xray_up` is the metric to alert on.** The panel reports Xray as `running`, `stop` or `error`; only `running`
+counts as up. Because the exporter keeps serving its last values when the panel is unreachable, pair it with
+Prometheus's own `up` series:
+
+```promql
+x_ui_xray_up == 0
+```
+
+`x_ui_xray_state` carries the same information descriptively — the raw `state` string plus the panel's `error` message
+in labels, with a constant value of 1. It is kept separate so the free-form error text never lands on the metric you
+alert on. Both `x_ui_panel_version` and `x_ui_xray_state` are info-style metrics: the number is always 1 and the meaning
+lives in the labels.
+
+**`x_ui_xray_uptime_seconds` measures Xray, not the panel.** The 3X-UI API reports it under `appStats` alongside the
+panel's own stats, but the value comes from the Xray process and reads **`0` whenever Xray is stopped**. A drop to zero
+means Xray restarted or died — the panel itself may still be running fine, so this is not a panel-availability signal.
+
+**`x_ui_panel_goroutines` counts goroutines, not OS threads.** The value is Go's `runtime.NumGoroutine()` for the panel
+process. It moves with concurrent work in the panel and is not a thread-pool or CPU signal.
 
 ## Before You Write Queries
 
@@ -137,10 +161,10 @@ Combined traffic per inbound:
 x_ui_inbound_up_bytes + x_ui_inbound_down_bytes
 ```
 
-Panel memory in mebibytes — valid only if your panel reports `appStats.mem` in bytes:
+Panel memory in mebibytes:
 
 ```promql
-x_ui_panel_memory / 1024 / 1024
+x_ui_panel_memory_bytes / 1024 / 1024
 ```
 
 Which XRay version each panel reports:
@@ -177,8 +201,12 @@ When generating PromQL, dashboards, alerting rules, or client code, apply these 
    exports the top N by upload and the top N by download, per inbound. Never assume client series exist, and never treat
    their absence as an outage.
 6. **Freshness is bounded by `UPDATE_INTERVAL`** (default 30s), not the scrape interval.
-7. **Failures are silent.** No self-reported health metric exists; use Prometheus's `up{job="..."}`.
-8. **Units are whatever the panel reports.** `appStats` values pass through unchanged and unnormalized.
+7. **`x_ui_xray_up` reports Xray, not the exporter.** If the panel is unreachable the exporter serves stale values, so
+   pair it with Prometheus's own `up{job="..."}` for end-to-end health. `x_ui_panel_version` and `x_ui_xray_state` are
+   info-style: value always 1, meaning in the labels.
+8. **`x_ui_xray_uptime_seconds` measures the Xray process, not the panel**, and is `0` while Xray is stopped. Never use
+   it as a panel-availability signal.
+9. **`x_ui_panel_goroutines` is `runtime.NumGoroutine()`**, not OS threads.
 
 When explaining or extending the metrics, edit `metrics/metrics.go` (definitions) and `api/api.go` (population)
 together, and update this file in the same change.

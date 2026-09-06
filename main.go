@@ -30,9 +30,13 @@ func init() { //
 		metrics.ClientDown,
 		// System-related metrics
 		metrics.XrayVersion,
-		metrics.PanelThreads,
-		metrics.PanelMemory,
-		metrics.PanelUptime,
+		metrics.PanelVersion,
+		metrics.XrayUp,
+		metrics.XrayState,
+		metrics.AmneziaWGUp,
+		metrics.PanelGoroutines,
+		metrics.PanelMemoryBytes,
+		metrics.XrayUptimeSeconds,
 	)
 }
 

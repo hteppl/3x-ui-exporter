@@ -43,8 +43,14 @@ type serverStatusResponse struct {
 	Msg     string `json:"msg"`
 	Obj     struct {
 		Xray struct {
-			Version string `json:"version"`
+			Version  string `json:"version"`
+			State    string `json:"state"`
+			ErrorMsg string `json:"errorMsg"`
 		} `json:"xray"`
+		PanelVersion string `json:"panelVersion"`
+		AmneziaWG    struct {
+			Running bool `json:"running"`
+		} `json:"amneziawg"`
 		AppStats struct {
 			Threads uint32 `json:"threads"`
 			Mem     uint64 `json:"mem"`
@@ -91,11 +97,43 @@ func NewAPIClient(cfg APIConfig) *APIClient {
 	}
 }
 
+// 3X-UI blocks an IP/username pair for 15 minutes after 5 failed logins.
+const (
+	authRetryBaseDelay = 30 * time.Second
+	authRetryMaxDelay  = 15 * time.Minute
+)
+
 var authCache struct {
-	Cookie    http.Cookie
-	CSRFToken string
-	ExpiresAt time.Time
+	Cookie      http.Cookie
+	CSRFToken   string
+	ExpiresAt   time.Time
+	Failures    int
+	NextRetryAt time.Time
 	sync.Mutex
+}
+
+// registerAuthFailure records a rejected credential and schedules the next
+// permitted attempt. Callers must hold authCache's lock.
+func registerAuthFailure() time.Duration {
+	authCache.Failures++
+
+	delay := authRetryBaseDelay
+	for i := 1; i < authCache.Failures && delay < authRetryMaxDelay; i++ {
+		delay *= 2
+	}
+	if delay > authRetryMaxDelay {
+		delay = authRetryMaxDelay
+	}
+
+	authCache.NextRetryAt = time.Now().Add(delay)
+	return delay
+}
+
+// resetAuthFailures clears the backoff after a successful login.
+// Callers must hold authCache's lock.
+func resetAuthFailures() {
+	authCache.Failures = 0
+	authCache.NextRetryAt = time.Time{}
 }
 
 // fetchCSRFToken retrieves the session CSRF token required by 3X-UI v3.0+.
@@ -154,6 +192,15 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 		return &authCache.Cookie, nil
 	}
 
+	// Hold off while a previous rejection is still backing off, so a bad
+	// credential cannot trip the panel's login limiter.
+	if wait := time.Until(authCache.NextRetryAt); wait > 0 {
+		return nil, fmt.Errorf(
+			"authentication backoff after %d failed attempt(s); retrying in %s",
+			authCache.Failures, wait.Round(time.Second),
+		)
+	}
+
 	// 3X-UI v3.0+ requires a CSRF token bound to the session cookie that
 	// /csrf-token sets. Without it the panel returns HTTP 403 on /login.
 	csrfToken, csrfCookie := a.fetchCSRFToken()
@@ -193,7 +240,10 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 	}
 
 	if resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("authentication failed: HTTP 403 (CSRF token rejected?)")
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf(
+			"authentication failed: HTTP 403 (CSRF token rejected?); backing off %s", delay,
+		)
 	}
 
 	var loginResp struct {
@@ -205,7 +255,8 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 	}
 
 	if !loginResp.Success {
-		return nil, fmt.Errorf("authentication failed: %s", loginResp.Msg)
+		delay := registerAuthFailure()
+		return nil, fmt.Errorf("authentication failed: %s; backing off %s", loginResp.Msg, delay)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -224,6 +275,7 @@ func (a *APIClient) GetAuthToken() (*http.Cookie, error) {
 	}
 
 	authCache.CSRFToken = csrfToken
+	resetAuthFailures()
 
 	return &authCache.Cookie, nil
 }
@@ -249,8 +301,10 @@ func (a *APIClient) FetchOnlineUsersCount(cookie *http.Cookie) error {
 }
 
 func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
-	// Clear old version metric to avoid accumulating obsolete label values
+	// Clear old label-bearing metrics to avoid accumulating obsolete values
 	metrics.XrayVersion.Reset()
+	metrics.PanelVersion.Reset()
+	metrics.XrayState.Reset()
 
 	body, err := a.sendRequest("/panel/api/server/status", http.MethodGet, cookie)
 	if err != nil {
@@ -272,10 +326,29 @@ func (a *APIClient) FetchServerStatus(cookie *http.Cookie) error {
 	num, _ := strconv.ParseFloat(xrayVersion, 64)
 	metrics.XrayVersion.WithLabelValues(response.Obj.Xray.Version).Set(num)
 
+	if response.Obj.PanelVersion != "" {
+		metrics.PanelVersion.WithLabelValues(response.Obj.PanelVersion).Set(1)
+	}
+
+	// The panel reports "running", "stop" or "error"; treat anything but
+	// "running" as down so the signal is safe to alert on.
+	metrics.XrayState.WithLabelValues(response.Obj.Xray.State, response.Obj.Xray.ErrorMsg).Set(1)
+	if response.Obj.Xray.State == "running" {
+		metrics.XrayUp.Set(1)
+	} else {
+		metrics.XrayUp.Set(0)
+	}
+
+	if response.Obj.AmneziaWG.Running {
+		metrics.AmneziaWGUp.Set(1)
+	} else {
+		metrics.AmneziaWGUp.Set(0)
+	}
+
 	// Panel metrics
-	metrics.PanelThreads.Set(float64(response.Obj.AppStats.Threads))
-	metrics.PanelMemory.Set(float64(response.Obj.AppStats.Mem))
-	metrics.PanelUptime.Set(float64(response.Obj.AppStats.Uptime))
+	metrics.PanelGoroutines.Set(float64(response.Obj.AppStats.Threads))
+	metrics.PanelMemoryBytes.Set(float64(response.Obj.AppStats.Mem))
+	metrics.XrayUptimeSeconds.Set(float64(response.Obj.AppStats.Uptime))
 
 	return nil
 }

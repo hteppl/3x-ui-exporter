@@ -105,14 +105,14 @@ func TestFetchServerStatus(t *testing.T) {
 	if err := c.FetchServerStatus(cookie); err != nil {
 		t.Fatalf("FetchServerStatus: %v", err)
 	}
-	if got := testutil.ToFloat64(metrics.PanelThreads); got != 42 {
-		t.Errorf("PanelThreads = %v, want 42", got)
+	if got := testutil.ToFloat64(metrics.PanelGoroutines); got != 42 {
+		t.Errorf("PanelGoroutines = %v, want 42", got)
 	}
-	if got := testutil.ToFloat64(metrics.PanelMemory); got != 123456 {
-		t.Errorf("PanelMemory = %v, want 123456", got)
+	if got := testutil.ToFloat64(metrics.PanelMemoryBytes); got != 123456 {
+		t.Errorf("PanelMemoryBytes = %v, want 123456", got)
 	}
-	if got := testutil.ToFloat64(metrics.PanelUptime); got != 86400 {
-		t.Errorf("PanelUptime = %v, want 86400", got)
+	if got := testutil.ToFloat64(metrics.XrayUptimeSeconds); got != 86400 {
+		t.Errorf("XrayUptimeSeconds = %v, want 86400", got)
 	}
 	// v-prefixed version is not numeric: the label carries the version, the
 	// value is best-effort 0. This preserves the pre-v3 behavior exactly.
