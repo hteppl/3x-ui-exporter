@@ -7,7 +7,6 @@
 [![Release](https://img.shields.io/github/v/release/hteppl/3x-ui-exporter?style=flat-square&logo=github&label=release&color=blue)](https://github.com/hteppl/3x-ui-exporter/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/hteppl/3x-ui-exporter/release.yaml?style=flat-square&logo=githubactions&logoColor=white&label=build)](https://github.com/hteppl/3x-ui-exporter/actions/workflows/release.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/hteppl/3x-ui-exporter?style=flat-square&logo=go&logoColor=white&label=go)](go.mod)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hteppl/3x-ui-exporter?style=flat-square)](https://goreportcard.com/report/github.com/hteppl/3x-ui-exporter)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square&logo=gnu&logoColor=white)](LICENSE)
 [![GitHub Downloads](https://img.shields.io/github/downloads/hteppl/3x-ui-exporter/total?style=flat-square&logo=github&label=github%20downloads&color=brightgreen)](https://github.com/hteppl/3x-ui-exporter/releases)
 [![Docker Pulls](https://img.shields.io/docker/pulls/hteppl/x-ui-exporter?style=flat-square&logo=docker&logoColor=white&label=docker%20pulls&color=066da5)](https://hub.docker.com/r/hteppl/x-ui-exporter)
