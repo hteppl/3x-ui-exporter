@@ -9,7 +9,7 @@ import (
 	"x-ui-exporter/config"
 	"x-ui-exporter/metrics"
 
-	"github.com/go-co-op/gocron"
+	"github.com/go-co-op/gocron/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -60,8 +60,15 @@ func main() {
 
 	fmt.Println("3X-UI Exporter (https://github.com/hteppl/3x-ui-exporter/)", version)
 
-	s := gocron.NewScheduler(time.Local)
-	defer s.Stop()
+	s, err := gocron.NewScheduler(gocron.WithLocation(time.Local))
+	if err != nil {
+		log.Fatalf("Create scheduler: %v", err)
+	}
+	defer func() {
+		if err := s.Shutdown(); err != nil {
+			log.Printf("Shutdown scheduler: %v", err)
+		}
+	}()
 
 	client := api.NewAPIClient(api.APIConfig{
 		BaseURL:            cliConfig.BaseURL,
@@ -71,31 +78,35 @@ func main() {
 		ClientsBytesRows:   cliConfig.ClientsBytesRows,
 	})
 
-	_, err = s.Every(cliConfig.UpdateInterval).Seconds().Do(func() {
-		token, err := client.GetAuthToken()
-		if err != nil {
-			log.Printf("get auth token: %v", err)
-			return
-		}
+	_, err = s.NewJob(
+		gocron.DurationJob(time.Duration(cliConfig.UpdateInterval)*time.Second),
+		gocron.NewTask(func() {
+			token, err := client.GetAuthToken()
+			if err != nil {
+				log.Printf("get auth token: %v", err)
+				return
+			}
 
-		// non-blocking errors
-		if err := client.FetchOnlineUsersCount(token); err != nil {
-			log.Printf("Error FetchOnlineUsersCount: %v", err)
-		}
+			// non-blocking errors
+			if err := client.FetchOnlineUsersCount(token); err != nil {
+				log.Printf("Error FetchOnlineUsersCount: %v", err)
+			}
 
-		if err := client.FetchServerStatus(token); err != nil {
-			log.Printf("Error FetchServerStatus: %v", err)
-		}
+			if err := client.FetchServerStatus(token); err != nil {
+				log.Printf("Error FetchServerStatus: %v", err)
+			}
 
-		if err := client.FetchInboundsList(token); err != nil {
-			log.Printf("Error FetchInboundsList: %v", err)
-		}
-	})
+			if err := client.FetchInboundsList(token); err != nil {
+				log.Printf("Error FetchInboundsList: %v", err)
+			}
+		}),
+		gocron.WithStartAt(gocron.WithStartImmediately()),
+	)
 	if err != nil {
 		log.Fatalf("Schedule job: %v", err)
 	}
 
-	s.StartAsync()
+	s.Start()
 
 	http.Handle("/metrics", BasicAuthMiddleware(
 		cliConfig.MetricsUsername,
