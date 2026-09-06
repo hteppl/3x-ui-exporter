@@ -117,8 +117,90 @@ fi
 
 # Check if config file already exists
 ENV_FILE_PATH="/etc/x-ui-exporter/.env"
+LEGACY_CONFIG_PATH="/etc/x-ui-exporter/config.yaml"
 SKIP_ENV_SETUP=0
-if [ -f "$ENV_FILE_PATH" ]; then
+
+# Migrate a pre-.env installation. Versions before the .env switch stored their
+# settings in config.yaml; convert it in place so upgrades keep working without
+# asking the user to re-enter anything.
+migrate_legacy_config() {
+    echo "Found a legacy configuration at $LEGACY_CONFIG_PATH."
+    echo "Migrating it to $ENV_FILE_PATH..."
+
+    # yaml-key:env-var pairs, one per line, covering every option the old
+    # config.yaml supported.
+    local mappings="panel-base-url:PANEL_BASE_URL
+panel-username:PANEL_USERNAME
+panel-password:PANEL_PASSWORD
+insecure-skip-verify:INSECURE_SKIP_VERIFY
+update-interval:UPDATE_INTERVAL
+timezone:TIMEZONE
+metrics-ip:METRICS_IP
+metrics-port:METRICS_PORT
+clients-bytes-rows:CLIENTS_BYTES_ROWS
+metrics-protected:METRICS_PROTECTED
+metrics-username:METRICS_USERNAME
+metrics-password:METRICS_PASSWORD"
+
+    local migrated=0
+    : > "$ENV_FILE_PATH"
+    echo "# Migrated from config.yaml on $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$ENV_FILE_PATH"
+
+    local pair key var line value escaped
+    while IFS= read -r pair; do
+        key="${pair%%:*}"
+        var="${pair##*:}"
+
+        # First occurrence of the key at the start of a line; commented-out
+        # lines are skipped because they do not match "^key:".
+        line=$(grep -m1 "^${key}:" "$LEGACY_CONFIG_PATH" 2>/dev/null)
+        [ -z "$line" ] && continue
+
+        value="${line#*:}"
+        # Trim surrounding whitespace.
+        value="$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        # Strip one layer of matching quotes. Inline comments are deliberately
+        # left alone: a "#" is far more likely to be part of a password than a
+        # trailing comment in a generated config.
+        case "$value" in
+            \"*\") value="${value#\"}"; value="${value%\"}" ;;
+            "'"*"'") value="${value#\'}"; value="${value%\'}" ;;
+        esac
+        [ -z "$value" ] && continue
+
+        # Quote the value so spaces and "#" survive both the exporter's env
+        # parser and systemd's EnvironmentFile parser. Single quotes are fully
+        # literal; fall back to double quotes when the value contains one.
+        case "$value" in
+            *"'"*)
+                escaped="$(printf '%s' "$value" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+                printf '%s="%s"\n' "$var" "$escaped" >> "$ENV_FILE_PATH"
+                ;;
+            *)
+                printf "%s='%s'\n" "$var" "$value" >> "$ENV_FILE_PATH"
+                ;;
+        esac
+        migrated=$((migrated + 1))
+    done <<< "$mappings"
+
+    if [ $migrated -eq 0 ]; then
+        echo "No recognizable settings found in $LEGACY_CONFIG_PATH."
+        rm -f "$ENV_FILE_PATH"
+        return 1
+    fi
+
+    rm -f "$LEGACY_CONFIG_PATH"
+    echo "Migrated ${migrated} setting(s). Removed $LEGACY_CONFIG_PATH."
+    return 0
+}
+
+if [ ! -f "$ENV_FILE_PATH" ] && [ -f "$LEGACY_CONFIG_PATH" ]; then
+    if migrate_legacy_config; then
+        SKIP_ENV_SETUP=1
+    fi
+fi
+
+if [ $SKIP_ENV_SETUP -eq 0 ] && [ -f "$ENV_FILE_PATH" ]; then
     echo "Env file already exists at $ENV_FILE_PATH"
     while true; do
         read -p "Do you want to overwrite the existing config? (y/N): " yn
