@@ -40,44 +40,25 @@ data readily available for integration with the Prometheus monitoring system.
 
 ## Metrics
 
-Below is a table of the metrics provided by 3X-UI Metrics Exporter.
+3X-UI Metrics Exporter exposes nine Prometheus gauges covering online users, per-client and per-inbound traffic, and
+panel health.
 
-### Users
+**See [METRICS.md](METRICS.md) for the complete reference** — every metric name, type, and label, along with example
+PromQL queries and the gauge-semantics caveats that matter when querying byte totals.
 
-Users metrics, such as online:
+## Integration with Prometheus
 
-| Name                      | Description                  |
-| ------------------------- | ---------------------------- |
-| `x_ui_total_online_users` | Total number of online users |
+To collect metrics with Prometheus, add the exporter to your prometheus.yml configuration file:
 
-### Clients
+```yaml
+scrape_configs:
+  - job_name: "x-ui_exporter"
+    static_configs:
+      - targets: ["<exporter-ip>:9090"]
+```
 
-Clients metrics (params: `id`, `email`):
-
-| Name                     | Description                       |
-| ------------------------ | --------------------------------- |
-| `x_ui_client_up_bytes`   | Total uploaded bytes per client   |
-| `x_ui_client_down_bytes` | Total downloaded bytes per client |
-
-### Inbounds
-
-Inbounds metrics (params: `id`, `remark`):
-
-| Name                      | Description                        |
-| ------------------------- | ---------------------------------- |
-| `x_ui_inbound_up_bytes`   | Total uploaded bytes per inbound   |
-| `x_ui_inbound_down_bytes` | Total downloaded bytes per inbound |
-
-### System
-
-System metrics (`version` param for `x_ui_xray_version`):
-
-| Name                 | Description                |
-| -------------------- | -------------------------- |
-| `x_ui_xray_version`  | XRay version used by 3X-UI |
-| `x_ui_panel_threads` | 3X-UI panel threads        |
-| `x_ui_panel_memory`  | 3X-UI panel memory usage   |
-| `x_ui_panel_uptime`  | 3X-UI panel uptime         |
+Ensure to replace `<your-panel-url>`, `<your-panel-username>`, `<your-panel-password>`, and `<exporter-ip>` with your
+actual information.
 
 ## Configuration
 
@@ -143,9 +124,32 @@ and a flag overrides both.
 There are several ways to install and run the 3X-UI Metrics Exporter, each tailored to different environments and
 deployment preferences. Select the installation method that aligns best with your infrastructure requirements:
 
-### Automatic Installation Script (Recommended)
+### Docker (Recommended)
 
-The easiest way to install the exporter is using automatic installation script:
+Running with Docker is the recommended way to deploy the exporter: it needs no toolchain on the host, isolates the
+exporter from the rest of your system, and makes updates a single `pull` away.
+
+#### Using Docker Compose:
+
+A ready-to-use [`docker-compose.yml`](docker-compose.yml) is provided with the project. It reads its configuration from
+a `.env` file, so copy the provided sample and fill in your panel details:
+
+```bash
+cp .env.sample .env
+```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+> **Security Recommendation:** For production deployments, it's strongly advised to enable metrics authentication by
+> setting `METRICS_PROTECTED=true` and configuring a secure custom metrics username and password.
+
+### Automatic Installation Script
+
+If you would rather run the exporter directly on the host under systemd, an installation script is available:
 
 ```bash
 bash <(curl -fsSL raw.githubusercontent.com/hteppl/3x-ui-exporter/main/install.sh)
@@ -159,7 +163,8 @@ During installation, you'll be prompted to enter:
 
 > **Note:** The script will validate your credentials to ensure they work with your panel.
 
-After installation, the service will be running automatically. You can manage it with:
+The script installs the binary to `/usr/local/bin`, writes your settings to `/etc/x-ui-exporter/.env`, and registers a
+systemd service. After installation, the service will be running automatically. You can manage it with:
 
 ```bash
 sudo systemctl status x-ui-exporter    # Check status
@@ -190,42 +195,18 @@ cp .env.sample .env
 ./x-ui-exporter
 ```
 
-### Docker Installation
+## Development
 
-Running with Docker provides an optimal solution for containerized environments, offering simplified deployment and
-streamlined updates.
+### Building from Source
 
-#### Using Docker Run:
-
-```bash
-docker run -d \
-  --name x-ui-exporter \
-  -e PANEL_BASE_URL="https://your-panel-url" \
-  -e PANEL_USERNAME="your-panel-username" \
-  -e PANEL_PASSWORD="your-panel-password" \
-  -p 9090:9090 \
-  hteppl/x-ui-exporter
-```
-
-#### Using Docker Compose:
-
-A ready-to-use [`docker-compose.yml`](docker-compose.yml) is provided with the project. It reads its configuration from
-a `.env` file, so copy the provided sample and fill in your panel details:
+Requires Go 1.27 or newer:
 
 ```bash
-cp .env.sample .env
+go build -o x-ui-exporter .
+go test ./...
 ```
 
-Then run:
-
-```bash
-docker compose up -d
-```
-
-> **Security Recommendation:** For production deployments, it's strongly advised to enable metrics authentication by
-> setting `METRICS_PROTECTED=true` and configuring a secure custom metrics username and password.
-
-### Docker build
+### Building the Docker Image
 
 You can build the Docker image locally for both AMD and ARM architectures using Docker Buildx:
 
@@ -244,22 +225,8 @@ docker buildx build \
 To build for a specific architecture only:
 
 ```bash
-docker buildx build --platform linux/amd64 -t ksusonic/3x-ui-exporter:latest .
+docker buildx build --platform linux/amd64 -t hteppl/x-ui-exporter:latest .
 ```
-
-## Integration with Prometheus
-
-To collect metrics with Prometheus, add the exporter to your prometheus.yml configuration file:
-
-```yaml
-scrape_configs:
-  - job_name: "x-ui_exporter"
-    static_configs:
-      - targets: ["<exporter-ip>:9090"]
-```
-
-Ensure to replace `<your-panel-url>`, `<your-panel-username>`, `<your-panel-password>`, and `<exporter-ip>` with your
-actual information.
 
 ## Contribute
 
